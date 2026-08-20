@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Jetson Control
+Comment=Control and diagnose the DKFZ Jetson runtime over SSH
+Exec=jetson-control
+Icon=jetson-control
+Terminal=false
+Categories=Utility;

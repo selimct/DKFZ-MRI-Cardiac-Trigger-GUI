@@ -25,7 +25,7 @@ add_library(jetson_control_core STATIC
 target_link_libraries(jetson_control_core PUBLIC Qt6::Core)
 target_include_directories(jetson_control_core PUBLIC src)
 
-add_executable(jetson-control
+qt_add_executable(jetson-control WIN32
     src/main.cpp
     src/main_window.cpp
     src/main_window.h
@@ -85,3 +85,12 @@ if(BUILD_TESTING)
 endif()
 
 install(TARGETS jetson-control RUNTIME DESTINATION bin)
+
+if(UNIX AND NOT APPLE)
+    install(FILES packaging/linux/jetson-control.desktop
+        DESTINATION share/applications
+    )
+    install(FILES packaging/linux/jetson-control.svg
+        DESTINATION share/icons/hicolor/scalable/apps
+    )
+endif()

@@ -5,9 +5,15 @@ and viewing stdout, stderr, exit status, and service logs. Nothing from this
 directory runs on the Jetson; commands are executed through its existing SSH
 server.
 
-This is a standalone repository. The computer running the GUI does not need a
-local live-stack checkout. The live-stack checkout is required only on the
-Jetson, at the path configured as `remote_directory`.
+This repository contains only the desktop GUI. Keep or clone it independently
+from the live-stack repository. The desktop does not need a local live-stack
+checkout: live-stack is required only on the Jetson, and `remote_directory`
+always refers to that remote checkout.
+
+| Computer | Required checkout | Purpose |
+| --- | --- | --- |
+| Desktop/workstation | This GUI repository | Builds and runs the Qt application and stores ignored local SSH settings. |
+| Jetson | live-stack repository | Supplies the runtime, service unit, configuration, models, and deployment scripts invoked by the GUI. |
 
 ## Operating modes
 
@@ -101,9 +107,39 @@ the service directly. Model preparation and initial TensorRT builds can be
 long-running; cancelling their SSH process is not guaranteed to terminate
 every remote child.
 
+## Download a release
+
+Each published GitHub Release is built and tested automatically for 64-bit
+Linux and Windows. When the release workflow finishes, its **Assets** section
+contains:
+
+- `jetson-control-<tag>-linux-x86_64.AppImage` for Linux;
+- `jetson-control-<tag>-windows-x86_64-setup.exe` for Windows; and
+- `SHA256SUMS.txt` for download verification.
+
+On Linux, make the downloaded AppImage executable and start it:
+
+```bash
+chmod +x jetson-control-*-linux-x86_64.AppImage
+./jetson-control-*-linux-x86_64.AppImage
+```
+
+On Windows, run the downloaded setup executable and launch **Jetson Control**
+from the Start menu. The application still requires an OpenSSH `ssh` client on
+the desktop because all Jetson commands are executed through it. Release files
+are currently unsigned, so Windows SmartScreen may show an unrecognized-app
+warning until code signing is configured.
+
+To publish a new version, first make sure the release workflow is present on
+the default branch. In GitHub, create a release for a tag such as `v0.1.0` and
+publish it. Publishing either a normal release or a pre-release starts the
+workflow; packages are attached only after both platform builds and all tests
+pass.
+
 ## Build on Linux
 
-From this repository's root:
+Clone this GUI repository wherever you keep desktop applications, then run the
+following from its root:
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
@@ -117,7 +153,9 @@ required. The build directory remains local and is ignored by Git.
 
 ## Local connection file
 
-Copy the committed template and place the Jetson private key beside it:
+The connection file and private key belong to this GUI checkout, not to the
+live-stack checkout. Copy the committed template and place the Jetson private
+key beside it:
 
 ```bash
 cp connection.ini.example connection.ini
@@ -136,6 +174,9 @@ identity_file=jetson_ed25519
 remote_directory=/home/orin/work/live_stack
 ```
 
+The path in `remote_directory` is evaluated on the Jetson. It does not need to
+exist on the desktop.
+
 `connection.ini` and the common private-key names in `.gitignore` are local
 only. Do not force-add them to Git. A relative `identity_file` is resolved
 relative to `connection.ini`, not relative to the shell's working directory.
@@ -153,6 +194,49 @@ layout). An explicit file can be selected from any location:
 Without a connection file, the fields remain editable and normal
 `~/.ssh/config` host aliases continue to work.
 
+## Temporary SSH jump host
+
+Keep temporary network routing in the desktop's normal `~/.ssh/config`. Give
+the jump host and Jetson aliases:
+
+```sshconfig
+Host dkfz-jump
+    HostName jump.example.org
+    User YOUR_JUMP_USER
+    IdentityFile /absolute/path/to/dkfz-gui/jump_key
+    IdentitiesOnly yes
+
+Host jetson-via-jump
+    HostName 10.0.0.25
+    User orin
+    ProxyJump dkfz-jump
+```
+
+Then select that target alias in the GUI's ignored `connection.ini`:
+
+```ini
+[ssh]
+host=jetson-via-jump
+port=22
+identity_file=jetson_key
+remote_directory=/home/orin/work/live_stack
+```
+
+The jump host uses the key configured under `Host dkfz-jump`; the Jetson uses
+the `identity_file` beside `connection.ini`. Use an absolute path for the jump
+key because OpenSSH reads it from `~/.ssh/config`. Before starting the GUI,
+accept both host keys and verify non-interactive access:
+
+```bash
+ssh dkfz-jump
+ssh jetson-via-jump
+ssh -o BatchMode=yes jetson-via-jump true
+```
+
+When direct access becomes available, remove `ProxyJump dkfz-jump` and change
+the alias's `HostName` to the directly reachable Jetson address. No GUI rebuild
+or source change is necessary.
+
 ## First connection
 
 The application sets `BatchMode=yes` and `StrictHostKeyChecking=yes` so it
@@ -160,7 +244,7 @@ cannot display password or unknown-host prompts. Establish and verify the
 connection once from a terminal before using the GUI:
 
 ```bash
-ssh orin@JETSON_HOST
+ssh -i jetson_key orin@JETSON_HOST
 ```
 
 An entry from `~/.ssh/config` can be entered directly into the Host field. The

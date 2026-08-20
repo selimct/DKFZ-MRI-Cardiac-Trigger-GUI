@@ -8,4 +8,6 @@
 /jetson_rsa.*
 /jetson_ed25519
 /jetson_ed25519.*
+/jetson_key
+/jetson_key.*
 *.user

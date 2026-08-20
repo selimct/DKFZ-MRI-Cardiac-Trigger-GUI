@@ -1,0 +1,169 @@
+name: Release packages
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+env:
+  QT_VERSION: 6.8.*
+  RELEASE_TAG: ${{ github.event.release.tag_name }}
+
+jobs:
+  linux-appimage:
+    name: Linux AppImage
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Install build and packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends ninja-build libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0 libfuse2 file patchelf
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: linux_gcc_64
+          cache: true
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Install into AppDir
+        run: cmake --install build --prefix "$GITHUB_WORKSPACE/AppDir/usr"
+
+      - name: Download linuxdeploy tools
+        run: |
+          curl --fail --location --retry 3 --output linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl --fail --location --retry 3 --output linuxdeploy-plugin-qt-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
+
+      - name: Build AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          ARCH: x86_64
+          NO_STRIP: "1"
+        run: |
+          mkdir -p dist
+          safe_tag="${RELEASE_TAG//\//-}"
+          export QMAKE="$QT_ROOT_DIR/bin/qmake"
+          export LINUXDEPLOY_OUTPUT_VERSION="${RELEASE_TAG#v}"
+          export LDAI_OUTPUT="$GITHUB_WORKSPACE/dist/jetson-control-${safe_tag}-linux-x86_64.AppImage"
+          ./linuxdeploy-x86_64.AppImage \
+            --appdir AppDir \
+            --desktop-file packaging/linux/jetson-control.desktop \
+            --icon-file packaging/linux/jetson-control.svg \
+            --plugin qt \
+            --output appimage
+          test -s "$LDAI_OUTPUT"
+
+      - name: Upload Linux package
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  windows-installer:
+    name: Windows installer
+    runs-on: windows-2025
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
+      - name: Install and deploy Qt runtime
+        shell: pwsh
+        run: |
+          cmake --install build --config Release --prefix "$env:GITHUB_WORKSPACE\package"
+          windeployqt --release --compiler-runtime --no-translations "$env:GITHUB_WORKSPACE\package\bin\jetson-control.exe"
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\dist" | Out-Null
+          $safeTag = $env:RELEASE_TAG -replace '[^0-9A-Za-z._-]', '-'
+          $version = $env:RELEASE_TAG -replace '^v', ''
+          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            $iscc = @(
+              "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+              "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+            ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $iscc) {
+            throw "Inno Setup compiler was not found on the runner"
+          }
+          $isccArguments = @(
+            "/DMyAppVersion=$version"
+            "/DMySourceDir=$env:GITHUB_WORKSPACE\package\bin"
+            "/DMyOutputDir=$env:GITHUB_WORKSPACE\dist"
+            "/DMyOutputBaseFilename=jetson-control-$safeTag-windows-x86_64-setup"
+            "$env:GITHUB_WORKSPACE\packaging\windows\jetson-control.iss"
+          )
+          & $iscc @isccArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-installer
+          path: dist/*.exe
+          if-no-files-found: error
+
+  publish-assets:
+    name: Attach packages to release
+    needs: [linux-appimage, windows-installer]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum *.AppImage *.exe > SHA256SUMS.txt
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE_TAG" dist/*.AppImage dist/*.exe dist/SHA256SUMS.txt --clobber
