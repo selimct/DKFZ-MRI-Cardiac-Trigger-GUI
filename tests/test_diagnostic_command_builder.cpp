@@ -166,10 +166,17 @@ void DiagnosticCommandBuilderTest::generatedCommandsParseAsBash() {
 
   for (const QString &command : commands) {
     QProcess process;
-    process.start(bash, {QStringLiteral("-n"), QStringLiteral("-c"), command});
+    process.start(bash, {QStringLiteral("-n")});
+    QVERIFY2(process.waitForStarted(5000), qPrintable(process.errorString()));
+
+    const QByteArray script = command.toUtf8();
+    QCOMPARE(process.write(script), static_cast<qint64>(script.size()));
+    process.closeWriteChannel();
+
     QVERIFY2(process.waitForFinished(5000), qPrintable(process.errorString()));
     QCOMPARE(process.exitStatus(), QProcess::NormalExit);
-    QCOMPARE(process.exitCode(), 0);
+    QVERIFY2(process.exitCode() == 0,
+             qPrintable(QString::fromUtf8(process.readAllStandardError())));
   }
 }
 
