@@ -22,8 +22,10 @@ non-interactive authentication and the user's normal `known_hosts` file. It
 streams output with severity-aware colors and also supports arbitrary
 non-interactive commands. Ordinary unclassified output uses the normal text
 color. Structured `debug` and `info` records are green, while structured
-`warning`, `error`, and `fatal` records are red. Unclassified output remains
-neutral unless it contains an explicit elevated-severity keyword.
+`warning`, `error`, and `fatal` records are red. The expected `input_paused`
+warning is amber because it represents a healthy process waiting for usable
+signal, not a runtime failure. Unclassified output remains neutral unless it
+contains an explicit elevated-severity keyword.
 
 ### Installed service
 
@@ -42,6 +44,13 @@ stable `deploy/model` slot. While inactive, it runs
 `--validate-only --check-engine`; while active, it avoids loading a second
 engine and performs configuration-only validation. Capture paths in the
 service config must stay under `/var/lib/dkfz-live`.
+
+The preflight also requires the input pause/recovery contract: automatic input
+reset, stuck-signal detection, recovery hysteresis, and nonzero UART/decoder
+deadlines must be enabled. For an active service, Check availability reports
+whether systemd's runtime status says input is running or paused. A paused
+service remains healthy and should not be restarted merely because no usable
+signal is present.
 
 Reload Unit runs `systemctl daemon-reload`. It is needed after editing the unit
 file, but runtime, config, manifest, and engine changes need only a service
@@ -93,6 +102,12 @@ The direct runtime remains attached to SSH for live output. The GUI records its
 PID in the remote user's runtime directory, and Stop verifies that PID's
 command line before sending `SIGTERM`. It will not use broad `pkill` matching
 or stop a runtime it cannot identify.
+
+During direct inference, missing, undecodable, frozen, sentinel, or baseline
+input changes the GUI status to paused while leaving the managed process and
+Stop action active. `input_paused` is shown in amber. Once stable moving input
+returns, the status changes back to running; the runtime has cleared its old
+temporal state and rebuilds a completely fresh model window before inference.
 
 After changing the connection, project root, model source directory, model,
 variant, or configuration, run **Check availability** again. Operations whose

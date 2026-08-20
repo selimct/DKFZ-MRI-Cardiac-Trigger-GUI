@@ -4,8 +4,18 @@
 
 enum class ConsoleLineSeverity {
   informational,
+  attention,
   elevated,
   unclassified,
 };
 
+enum class RuntimeInputEvent {
+  none,
+  paused,
+  recovered,
+  running,
+};
+
 [[nodiscard]] ConsoleLineSeverity classifyConsoleLine(const QByteArray &line);
+[[nodiscard]] RuntimeInputEvent
+runtimeInputEventForConsoleLine(const QByteArray &line);

@@ -28,6 +28,8 @@ constexpr auto kServiceName = "dkfz-native-uart-live";
 
 QColor informationalColor() { return QColor(QStringLiteral("#4d9b58")); }
 
+QColor attentionColor() { return QColor(QStringLiteral("#c28b27")); }
+
 QColor elevatedColor() { return QColor(QStringLiteral("#d45b5b")); }
 
 QPushButton *makeActionButton(const QString &text, QWidget *parent) {
@@ -376,7 +378,8 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
     runCommand(
         QStringLiteral("Follow service log"),
         QStringLiteral("journalctl --follow --lines=100 --output=cat --unit=%1")
-            .arg(kServiceName));
+            .arg(kServiceName),
+        TaskKind::serviceLogs);
   });
 
   connect(prepareModelButton_, &QPushButton::clicked, this, [this] {
@@ -704,14 +707,62 @@ void MainWindow::appendClassifiedConsoleBytes(QByteArray &pending,
 
     const QByteArray line = pending.left(newline + 1);
     pending.remove(0, newline + 1);
+    applyRuntimeInputEvent(line);
     const ConsoleLineSeverity severity = classifyConsoleLine(line);
     if (severity == ConsoleLineSeverity::elevated) {
       appendConsoleBytes(line, elevatedColor());
+    } else if (severity == ConsoleLineSeverity::attention) {
+      appendConsoleBytes(line, attentionColor());
     } else if (severity == ConsoleLineSeverity::informational) {
       appendConsoleBytes(line, informationalColor());
     } else {
       appendConsoleBytes(line, palette().color(QPalette::Text));
     }
+  }
+}
+
+void MainWindow::applyRuntimeInputEvent(const QByteArray &line) {
+  const RuntimeInputEvent event = runtimeInputEventForConsoleLine(line);
+  if (event == RuntimeInputEvent::none) {
+    return;
+  }
+
+  const bool direct = activeTask_ == TaskKind::directInference;
+  const bool service = activeTask_ == TaskKind::serviceLogs;
+  if (event == RuntimeInputEvent::paused) {
+    statusLabel_->setText(
+        direct ? QStringLiteral(
+                     "Direct inference paused — waiting for usable signal.")
+               : QStringLiteral(
+                     "Runtime paused — waiting for usable signal; process is "
+                     "healthy."));
+    if (service) {
+      serviceAvailabilityLabel_->setText(QStringLiteral(
+          "The service is active but input processing is paused while it "
+          "waits for usable signal. No restart is required."));
+    }
+    return;
+  }
+
+  if (event == RuntimeInputEvent::recovered) {
+    statusLabel_->setText(
+        direct ? QStringLiteral(
+                     "Direct inference running — usable signal detected; "
+                     "building a fresh model window.")
+               : QStringLiteral(
+                     "Runtime input recovered — processing resumed with a "
+                     "fresh model window."));
+    if (service) {
+      serviceAvailabilityLabel_->setText(QStringLiteral(
+          "The service is active and usable input has recovered. Processing "
+          "resumed with a fresh model window."));
+    }
+    return;
+  }
+
+  if (direct) {
+    statusLabel_->setText(
+        QStringLiteral("Direct inference running — input is usable."));
   }
 }
 
@@ -792,6 +843,7 @@ void MainWindow::applyAvailabilityProbe(const QByteArray &output) {
   capabilities_.activeModel = value("__JCG_ACTIVE_MODEL__");
   capabilities_.activeVariant = value("__JCG_ACTIVE_VARIANT__");
   capabilities_.activeSourceDirectory = value("__JCG_ACTIVE_SOURCE__");
+  capabilities_.serviceInputState = value("__JCG_SERVICE_INPUT__");
   capabilities_.serviceState = value("__JCG_SERVICE_STATE__");
 
   if (capabilities_.serviceReady) {
@@ -803,6 +855,18 @@ void MainWindow::applyAvailabilityProbe(const QByteArray &output) {
             .arg(capabilities_.serviceState, capabilities_.serviceEnabled
                                                  ? QStringLiteral("enabled")
                                                  : QStringLiteral("disabled")));
+    if (capabilities_.serviceActive &&
+        capabilities_.serviceInputState == QStringLiteral("paused")) {
+      serviceAvailabilityLabel_->setText(
+          serviceAvailabilityLabel_->text() +
+          QStringLiteral(" Input is paused while the healthy process waits "
+                         "for usable signal."));
+    } else if (capabilities_.serviceActive &&
+               capabilities_.serviceInputState == QStringLiteral("running")) {
+      serviceAvailabilityLabel_->setText(
+          serviceAvailabilityLabel_->text() +
+          QStringLiteral(" Input is usable and processing is running."));
+    }
   } else if (capabilities_.service) {
     QStringList reasons;
     if (!capabilities_.serviceLinkedToCheckout) {

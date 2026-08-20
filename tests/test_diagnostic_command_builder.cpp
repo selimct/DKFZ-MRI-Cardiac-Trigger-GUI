@@ -12,6 +12,7 @@ private slots:
   void resolvesActiveManifest();
   void buildsPreparationCommand();
   void buildsSafeDirectRuntimeCommand();
+  void validatesInputRecoveryContract();
   void buildsAvailabilityProbe();
   void generatedCommandsParseAsBash();
 };
@@ -47,6 +48,21 @@ void DiagnosticCommandBuilderTest::validatesParameters() {
   options.outputMode = QStringLiteral("gpio");
   options.emitProbabilities = true;
   QVERIFY(!validateDiagnosticOptions(options).isEmpty());
+}
+
+void DiagnosticCommandBuilderTest::validatesInputRecoveryContract() {
+  const DiagnosticRuntimeOptions options{
+      .modelName = QStringLiteral("target_r"),
+      .modelDirectory = QStringLiteral("models/target_r"),
+  };
+  const QString command = validateRuntimeCommand(options);
+  QVERIFY(command.contains(QStringLiteral("input_reset_enabled")));
+  QVERIFY(command.contains(QStringLiteral("ecg_baseline_reset_ms")));
+  QVERIFY(command.contains(QStringLiteral("stuck_signal_reset_ms")));
+  QVERIFY(command.contains(QStringLiteral("input_recovery_ms")));
+  QVERIFY(command.contains(QStringLiteral("watchdog_enabled")));
+  QVERIFY(command.contains(QStringLiteral("uart_timeout_ms")));
+  QVERIFY(command.contains(QStringLiteral("sample_timeout_ms")));
 }
 
 void DiagnosticCommandBuilderTest::resolvesActiveManifest() {
@@ -100,6 +116,7 @@ void DiagnosticCommandBuilderTest::buildsAvailabilityProbe() {
   const QString command = availabilityProbeCommand(options);
   QVERIFY(command.contains(QStringLiteral("__JCG_SERVICE__")));
   QVERIFY(command.contains(QStringLiteral("__JCG_SERVICE_ACTIVE__")));
+  QVERIFY(command.contains(QStringLiteral("__JCG_SERVICE_INPUT__")));
   QVERIFY(command.contains(QStringLiteral("__JCG_SERVICE_READY__")));
   QVERIFY(command.contains(QStringLiteral("__JCG_SERVICE_LINKED__")));
   QVERIFY(command.contains(QStringLiteral("__JCG_SERVICE_CONTRACT__")));
@@ -116,6 +133,10 @@ void DiagnosticCommandBuilderTest::buildsAvailabilityProbe() {
   QVERIFY(
       command.contains(QStringLiteral("deploy/dkfz-native-uart-live.service")));
   QVERIFY(command.contains(QStringLiteral("config/native_uart_live.conf")));
+  QVERIFY(command.contains(QStringLiteral("ecg_baseline_reset_ms")));
+  QVERIFY(command.contains(QStringLiteral("stuck_signal_reset_ms")));
+  QVERIFY(command.contains(QStringLiteral("input_recovery_ms")));
+  QVERIFY(command.contains(QStringLiteral("StatusText")));
   QVERIFY(!command.contains(QStringLiteral("/etc/dkfz-live")));
 
   options.preparationMode = QStringLiteral("complete");

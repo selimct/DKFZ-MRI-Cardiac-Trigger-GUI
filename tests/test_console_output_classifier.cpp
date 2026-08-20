@@ -7,8 +7,10 @@ class ConsoleOutputClassifierTest final : public QObject {
 
 private slots:
   void classifiesStructuredSeverities();
+  void treatsInputPauseAsOperationalAttention();
   void trustsStructuredSeverityOverMessageText();
   void classifiesPlainTextConservatively();
+  void classifiesRuntimeInputEvents();
 };
 
 void ConsoleOutputClassifierTest::classifiesStructuredSeverities() {
@@ -26,6 +28,15 @@ void ConsoleOutputClassifierTest::classifiesStructuredSeverities() {
            ConsoleLineSeverity::elevated);
 }
 
+void ConsoleOutputClassifierTest::treatsInputPauseAsOperationalAttention() {
+  QCOMPARE(classifyConsoleLine(
+               R"({"schema":"dkfz-live-diagnostic-v1","severity":"warning","code":"input_paused"})"),
+           ConsoleLineSeverity::attention);
+  QCOMPARE(classifyConsoleLine(
+               R"({"severity":"warning","code":"uart_resynchronized"})"),
+           ConsoleLineSeverity::elevated);
+}
+
 void ConsoleOutputClassifierTest::trustsStructuredSeverityOverMessageText() {
   QCOMPARE(classifyConsoleLine(
                R"({"severity":"info","message":"No fatal error occurred"})"),
@@ -39,6 +50,23 @@ void ConsoleOutputClassifierTest::classifiesPlainTextConservatively() {
            ConsoleLineSeverity::unclassified);
   QCOMPARE(classifyConsoleLine("Step 2 of 4\n"),
            ConsoleLineSeverity::unclassified);
+}
+
+void ConsoleOutputClassifierTest::classifiesRuntimeInputEvents() {
+  QCOMPARE(runtimeInputEventForConsoleLine(
+               R"({"code":"input_paused","severity":"warning"})"),
+           RuntimeInputEvent::paused);
+  QCOMPARE(runtimeInputEventForConsoleLine(
+               R"({"code":"input_signal_recovered","severity":"info"})"),
+           RuntimeInputEvent::recovered);
+  QCOMPARE(runtimeInputEventForConsoleLine(
+               R"({"code":"runtime_status","input_paused":true})"),
+           RuntimeInputEvent::paused);
+  QCOMPARE(runtimeInputEventForConsoleLine(
+               R"({"code":"runtime_status","input_paused":false})"),
+           RuntimeInputEvent::running);
+  QCOMPARE(runtimeInputEventForConsoleLine("not structured"),
+           RuntimeInputEvent::none);
 }
 
 QTEST_APPLESS_MAIN(ConsoleOutputClassifierTest)

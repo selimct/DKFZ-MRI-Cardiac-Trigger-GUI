@@ -51,6 +51,25 @@ QString runtimeBaseCommand(const DiagnosticRuntimeOptions &options) {
   return arguments.join(QChar::Space);
 }
 
+QString inputRecoveryConfigCheck(const QString &quotedConfig) {
+  return QStringLiteral(
+             "grep -Eq -- '^[[:space:]]*input_reset_enabled[[:space:]]*="
+             "[[:space:]]*true[[:space:]]*$' %1 && "
+             "grep -Eq -- '^[[:space:]]*ecg_baseline_reset_ms[[:space:]]*="
+             "[[:space:]]*[1-9][0-9]*[[:space:]]*$' %1 && "
+             "grep -Eq -- '^[[:space:]]*stuck_signal_reset_ms[[:space:]]*="
+             "[[:space:]]*[1-9][0-9]*[[:space:]]*$' %1 && "
+             "grep -Eq -- '^[[:space:]]*input_recovery_ms[[:space:]]*="
+             "[[:space:]]*[1-9][0-9]*[[:space:]]*$' %1 && "
+             "grep -Eq -- '^[[:space:]]*watchdog_enabled[[:space:]]*="
+             "[[:space:]]*true[[:space:]]*$' %1 && "
+             "grep -Eq -- '^[[:space:]]*uart_timeout_ms[[:space:]]*="
+             "[[:space:]]*[1-9][0-9]*[[:space:]]*$' %1 && "
+             "grep -Eq -- '^[[:space:]]*sample_timeout_ms[[:space:]]*="
+             "[[:space:]]*[1-9][0-9]*[[:space:]]*$' %1")
+      .arg(quotedConfig);
+}
+
 QString stateVariables() {
   return QStringLiteral(
       "state_dir=\"${XDG_RUNTIME_DIR:-/tmp}/dkfz-jetson-control-${UID}\"; "
@@ -147,7 +166,9 @@ QString prepareModelCommand(const DiagnosticRuntimeOptions &options) {
 
 QString validateRuntimeCommand(const DiagnosticRuntimeOptions &options) {
   return runtimeBaseCommand(options) +
-         QStringLiteral(" --validate-only --check-engine");
+         QStringLiteral(" --validate-only --check-engine && ") +
+         inputRecoveryConfigCheck(
+             posixShellQuote(QDir::cleanPath(options.configPath)));
 }
 
 QString startDirectRuntimeCommand(const DiagnosticRuntimeOptions &options) {
@@ -234,13 +255,17 @@ QString availabilityProbeCommand(const DiagnosticRuntimeOptions &options) {
       "manifest_present=no; engine_present=no; slot_metadata=no; "
       "active_selection=no; direct_validation=no; prepare_present=no; "
       "prepare_inputs=no; rebuild_present=no; direct_active=no; "
-      "service_state=unknown; ");
+      "service_state=unknown; service_input=unknown; ");
   command +=
       QStringLiteral(
           "if systemctl cat %1.service >/dev/null 2>&1; then "
           "service_installed=yes; fi; "
           "service_state=\"$(systemctl is-active %1.service 2>/dev/null || "
           "true)\"; "
+          "service_status=\"$(systemctl show --property=StatusText --value "
+          "%1.service 2>/dev/null || true)\"; "
+          "case \"$service_status\" in input=paused*) service_input=paused;; "
+          "input=running*) service_input=running;; esac; "
           "case \"$service_state\" in "
           "active|activating|reloading|deactivating) service_active=yes;; "
           "esac; "
@@ -268,6 +293,7 @@ QString availabilityProbeCommand(const DiagnosticRuntimeOptions &options) {
           "grep -Fqx -- 'ReadWritePaths=/var/lib/dkfz-live' %3 && "
           "grep -Eq -- '^[[:space:]]*manifest_path[[:space:]]*="
           "[[:space:]]*deploy/model/model\\.conf[[:space:]]*$' %1 && "
+          "%4 && "
           "test -d /var/lib/dkfz-live && "
           "id dkfz-live >/dev/null 2>&1 && "
           "getent group dkfz-live >/dev/null 2>&1 && "
@@ -277,7 +303,8 @@ QString availabilityProbeCommand(const DiagnosticRuntimeOptions &options) {
           "/var/lib/dkfz-live/*) true;; *) false;; esac; }; then "
           "service_contract=yes; fi; ")
           .arg(posixShellQuote(serviceConfig), service,
-               posixShellQuote(serviceUnit));
+               posixShellQuote(serviceUnit),
+               inputRecoveryConfigCheck(posixShellQuote(serviceConfig)));
   command +=
       QStringLiteral("if test -x %1; then runtime_present=yes; fi; "
                      "if test -r %2; then service_config_present=yes; fi; "
@@ -344,6 +371,7 @@ QString availabilityProbeCommand(const DiagnosticRuntimeOptions &options) {
       "printf '__JCG_SERVICE__=%s\\n' \"$service_installed\"; "
       "printf '__JCG_SERVICE_ACTIVE__=%s\\n' \"$service_active\"; "
       "printf '__JCG_SERVICE_STATE__=%s\\n' \"$service_state\"; "
+      "printf '__JCG_SERVICE_INPUT__=%s\\n' \"$service_input\"; "
       "printf '__JCG_SERVICE_ENABLED__=%s\\n' \"$service_enabled\"; "
       "printf '__JCG_SERVICE_LINKED__=%s\\n' \"$service_linked\"; "
       "printf '__JCG_SERVICE_CONTRACT__=%s\\n' \"$service_contract\"; "

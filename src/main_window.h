@@ -34,6 +34,7 @@ private:
     ordinary,
     availabilityProbe,
     serviceMutation,
+    serviceLogs,
     validateRuntime,
     prepareModel,
     rebuildRuntime,
@@ -63,6 +64,7 @@ private:
     QString activeModel;
     QString activeVariant;
     QString activeSourceDirectory;
+    QString serviceInputState;
     QString serviceState;
   };
 
@@ -75,6 +77,7 @@ private:
   void appendConsoleBytes(const QByteArray &data, const QColor &color);
   void appendClassifiedConsoleBytes(QByteArray &pending,
                                     const QByteArray &data);
+  void applyRuntimeInputEvent(const QByteArray &line);
   void flushClassifiedConsoleBytes(QByteArray &pending);
   void addCommandToHistory(const QString &command);
   void invalidateAvailability();
