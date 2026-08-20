@@ -33,7 +33,8 @@ bool RemoteCommandRunner::isRunning() const {
 QString RemoteCommandRunner::sshExecutable() const { return sshExecutable_; }
 
 void RemoteCommandRunner::start(const SshConnectionOptions &options,
-                                const QString &command) {
+                                const QString &command,
+                                QByteArray standardInput) {
   if (isRunning()) {
     emit failedToStart(
         QStringLiteral("Another remote command is already running."));
@@ -58,6 +59,11 @@ void RemoteCommandRunner::start(const SshConnectionOptions &options,
   process_.setProgram(sshExecutable_);
   process_.setArguments(sshArguments(options, command));
   process_.start();
+  if (!standardInput.isEmpty()) {
+    process_.write(standardInput);
+    standardInput.fill('\0');
+  }
+  process_.closeWriteChannel();
   emit started(sshDestination(options), command);
 }
 

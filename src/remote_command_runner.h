@@ -2,6 +2,7 @@
 
 #include "ssh_command_builder.h"
 
+#include <QByteArray>
 #include <QObject>
 #include <QProcess>
 #include <QString>
@@ -16,7 +17,8 @@ public:
   [[nodiscard]] QString sshExecutable() const;
 
 public slots:
-  void start(const SshConnectionOptions &options, const QString &command);
+  void start(const SshConnectionOptions &options, const QString &command,
+             QByteArray standardInput = {});
   void cancel();
 
 signals:

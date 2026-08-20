@@ -114,13 +114,17 @@ variant, or configuration, run **Check availability** again. Operations whose
 executable, script, configuration, active-slot files, or service unit is
 unavailable stay disabled.
 
-This is a command console, not a terminal emulator. Interactive password
-prompts, `sudo` prompts, full-screen terminal programs, and shell job control
-are deliberately unsupported. Service actions use `sudo -n` and therefore
-require an appropriate narrow sudoers rule when the SSH user cannot control
-the service directly. Model preparation and initial TensorRT builds can be
-long-running; cancelling their SSH process is not guaranteed to terminate
-every remote child.
+This is a command console, not a terminal emulator. General interactive
+password prompts, full-screen terminal programs, and shell job control are
+deliberately unsupported. For the built-in service actions, an optional
+**Remote sudo password** can be entered once in the Connection section. It is
+kept only in application memory, sent to `sudo` over the encrypted SSH
+connection's standard input, and never saved to `connection.ini` or placed in
+a command line. It is cleared when the SSH host, user, port, or identity changes
+and when the application exits. With an empty password field, service actions
+continue to use `sudo -n`, which supports a narrow passwordless sudoers rule.
+Model preparation and initial TensorRT builds can be long-running; cancelling
+their SSH process is not guaranteed to terminate every remote child.
 
 ## Download a release
 

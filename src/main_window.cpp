@@ -99,11 +99,22 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
   remoteDirectoryEdit_->setToolTip(QStringLiteral(
       "The Jetson checkout path. It must match the source side of the "
       "service's BindReadOnlyPaths entry."));
+  sudoPasswordEdit_ = new QLineEdit(connectionGroup);
+  sudoPasswordEdit_->setEchoMode(QLineEdit::Password);
+  sudoPasswordEdit_->setClearButtonEnabled(true);
+  sudoPasswordEdit_->setPlaceholderText(
+      QStringLiteral("optional; kept in memory until cleared or exit"));
+  sudoPasswordEdit_->setToolTip(QStringLiteral(
+      "Password for sudo on the remote Jetson. It is never saved or placed "
+      "in a command; managed service actions send it over SSH standard "
+      "input to sudo."));
 
   hostEdit_->setText(initialConnection.host);
   userEdit_->setText(initialConnection.user);
   connectionLayout->addRow(QStringLiteral("Host"), hostEdit_);
   connectionLayout->addRow(QStringLiteral("User"), userEdit_);
+  connectionLayout->addRow(QStringLiteral("Remote sudo password"),
+                           sudoPasswordEdit_);
   connectionLayout->addRow(QStringLiteral("Port"), portSpin_);
   connectionLayout->addRow(QStringLiteral("SSH key"), identityFileEdit_);
   connectionLayout->addRow(QStringLiteral("Remote project root"),
@@ -344,34 +355,38 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
             .arg(kServiceName));
   });
   connect(serviceReloadButton_, &QPushButton::clicked, this, [this] {
-    runCommand(QStringLiteral("Reload systemd unit"),
-               QStringLiteral("sudo -n systemctl daemon-reload && "
-                              "systemctl show --property=NeedDaemonReload %1")
-                   .arg(kServiceName),
-               TaskKind::serviceMutation);
+    runCommand(
+        QStringLiteral("Reload systemd unit"),
+        remoteSudoCommand(QStringLiteral("systemctl daemon-reload")) +
+            QStringLiteral(" && systemctl show --property=NeedDaemonReload %1")
+                .arg(kServiceName),
+        TaskKind::serviceMutation);
   });
   connect(serviceStartButton_, &QPushButton::clicked, this, [this] {
     runCommand(QStringLiteral("Start service"),
-               QStringLiteral("sudo -n systemctl start %1 && "
-                              "systemctl --no-pager --full status %1")
-                   .arg(kServiceName),
+               remoteSudoCommand(
+                   QStringLiteral("systemctl start %1").arg(kServiceName)) +
+                   QStringLiteral(" && systemctl --no-pager --full status %1")
+                       .arg(kServiceName),
                TaskKind::serviceMutation);
   });
   connect(serviceStopButton_, &QPushButton::clicked, this, [this] {
     runCommand(
         QStringLiteral("Stop service"),
-        QStringLiteral(
-            "sudo -n systemctl stop %1; "
-            "stop_code=$?; systemctl --no-pager --full status %1 || true; "
-            "exit \"$stop_code\"")
-            .arg(kServiceName),
+        remoteSudoCommand(
+            QStringLiteral("systemctl stop %1").arg(kServiceName)) +
+            QStringLiteral(
+                "; stop_code=$?; systemctl --no-pager --full status %1 || "
+                "true; exit \"$stop_code\"")
+                .arg(kServiceName),
         TaskKind::serviceMutation);
   });
   connect(serviceRestartButton_, &QPushButton::clicked, this, [this] {
     runCommand(QStringLiteral("Restart service"),
-               QStringLiteral("sudo -n systemctl restart %1 && "
-                              "systemctl --no-pager --full status %1")
-                   .arg(kServiceName),
+               remoteSudoCommand(
+                   QStringLiteral("systemctl restart %1").arg(kServiceName)) +
+                   QStringLiteral(" && systemctl --no-pager --full status %1")
+                       .arg(kServiceName),
                TaskKind::serviceMutation);
   });
   connect(serviceLogsButton_, &QPushButton::clicked, this, [this] {
@@ -449,10 +464,16 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
   connect(clearButton, &QPushButton::clicked, console_, &QPlainTextEdit::clear);
 
   const auto invalidate = [this] { invalidateAvailability(); };
-  connect(hostEdit_, &QLineEdit::textChanged, this, invalidate);
-  connect(userEdit_, &QLineEdit::textChanged, this, invalidate);
-  connect(portSpin_, qOverload<int>(&QSpinBox::valueChanged), this, invalidate);
-  connect(identityFileEdit_, &QLineEdit::textChanged, this, invalidate);
+  const auto invalidateConnection = [this] {
+    sudoPasswordEdit_->clear();
+    invalidateAvailability();
+  };
+  connect(hostEdit_, &QLineEdit::textChanged, this, invalidateConnection);
+  connect(userEdit_, &QLineEdit::textChanged, this, invalidateConnection);
+  connect(portSpin_, qOverload<int>(&QSpinBox::valueChanged), this,
+          invalidateConnection);
+  connect(identityFileEdit_, &QLineEdit::textChanged, this,
+          invalidateConnection);
   connect(remoteDirectoryEdit_, &QLineEdit::textChanged, this, invalidate);
   connect(modelNameEdit_, &QLineEdit::textChanged, this,
           [this, invalidate](const QString &name) {
@@ -596,6 +617,7 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
 
 void MainWindow::closeEvent(QCloseEvent *event) {
   if (!runner_.isRunning() && !controlRunner_.isRunning()) {
+    sudoPasswordEdit_->clear();
     event->accept();
     return;
   }
@@ -628,6 +650,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
   if (answer == QMessageBox::Yes) {
     runner_.cancel();
     controlRunner_.cancel();
+    sudoPasswordEdit_->clear();
     event->accept();
   } else {
     event->ignore();
@@ -658,6 +681,13 @@ DiagnosticRuntimeOptions MainWindow::diagnosticOptions() const {
   };
 }
 
+QString MainWindow::remoteSudoCommand(const QString &command) const {
+  if (sudoPasswordEdit_->text().isEmpty()) {
+    return QStringLiteral("sudo -n -- %1").arg(command);
+  }
+  return QStringLiteral("sudo -S -p '' -- %1").arg(command);
+}
+
 void MainWindow::runCommand(const QString &label, const QString &command,
                             TaskKind kind) {
   if (runner_.isRunning()) {
@@ -668,7 +698,14 @@ void MainWindow::runCommand(const QString &label, const QString &command,
 
   activeTask_ = kind;
   statusLabel_->setText(QStringLiteral("Starting %1…").arg(label));
-  runner_.start(connectionOptions(), command);
+  QByteArray standardInput;
+  if (kind == TaskKind::serviceMutation &&
+      !sudoPasswordEdit_->text().isEmpty()) {
+    standardInput = sudoPasswordEdit_->text().toUtf8();
+    standardInput.append('\n');
+  }
+  runner_.start(connectionOptions(), command, standardInput);
+  standardInput.fill('\0');
   updateActionAvailability();
 }
 
@@ -960,6 +997,7 @@ void MainWindow::updateActionAvailability() {
   portSpin_->setEnabled(!anyBusy);
   identityFileEdit_->setEnabled(!anyBusy);
   remoteDirectoryEdit_->setEnabled(!anyBusy);
+  sudoPasswordEdit_->setEnabled(!anyBusy);
   probeButton_->setEnabled(!anyBusy);
   healthButton_->setEnabled(!anyBusy);
 

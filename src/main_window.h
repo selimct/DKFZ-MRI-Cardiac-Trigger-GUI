@@ -70,6 +70,7 @@ private:
 
   SshConnectionOptions connectionOptions() const;
   DiagnosticRuntimeOptions diagnosticOptions() const;
+  QString remoteSudoCommand(const QString &command) const;
   void runCommand(const QString &label, const QString &command,
                   TaskKind kind = TaskKind::ordinary);
   void stopDirectInference();
@@ -104,6 +105,7 @@ private:
   QSpinBox *portSpin_{nullptr};
   QLineEdit *identityFileEdit_{nullptr};
   QLineEdit *remoteDirectoryEdit_{nullptr};
+  QLineEdit *sudoPasswordEdit_{nullptr};
   QPushButton *probeButton_{nullptr};
   QPushButton *healthButton_{nullptr};
 
