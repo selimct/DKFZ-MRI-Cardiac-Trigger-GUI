@@ -1,0 +1,11 @@
+/build/
+/connection.ini
+/id_rsa
+/id_rsa.*
+/id_ed25519
+/id_ed25519.*
+/jetson_rsa
+/jetson_rsa.*
+/jetson_ed25519
+/jetson_ed25519.*
+*.user

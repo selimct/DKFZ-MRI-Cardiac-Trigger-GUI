@@ -1,0 +1,6 @@
+[ssh]
+host=192.168.1.50
+user=orin
+port=22
+identity_file=jetson_ed25519
+remote_directory=/home/orin/work/live_stack
