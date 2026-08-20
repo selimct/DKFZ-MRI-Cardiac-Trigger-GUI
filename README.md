@@ -134,7 +134,9 @@ To publish a new version, first make sure the release workflow is present on
 the default branch. In GitHub, create a release for a tag such as `v0.1.0` and
 publish it. Publishing either a normal release or a pre-release starts the
 workflow; packages are attached only after both platform builds and all tests
-pass.
+pass. To rerun packaging manually, open **Actions → Release packages → Run
+workflow** and enter the tag of an existing GitHub Release. The separate CI
+workflow is also manual-only; neither workflow runs for ordinary pushes.
 
 ## Build on Linux
 
