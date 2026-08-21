@@ -16,7 +16,6 @@ class QPlainTextEdit;
 class QPushButton;
 class QSpinBox;
 class QTabWidget;
-class QTimer;
 
 class MainWindow final : public QMainWindow {
   Q_OBJECT
@@ -82,8 +81,7 @@ private:
   void applyRuntimeInputEvent(const QByteArray &line);
   void flushClassifiedConsoleBytes(QByteArray &pending);
   void addCommandToHistory(const QString &command);
-  void checkAvailability(bool reportValidationError = true);
-  void scheduleAvailabilityCheck();
+  void checkAvailability();
   void invalidateAvailability();
   void applyAvailabilityProbe(const QByteArray &output);
   void updateActionAvailability();
@@ -112,9 +110,8 @@ private:
   QLineEdit *sudoPasswordEdit_{nullptr};
   QCheckBox *acceptNewHostKeyCheck_{nullptr};
   QPushButton *probeButton_{nullptr};
+  QPushButton *connectionCheckButton_{nullptr};
   QPushButton *healthButton_{nullptr};
-  QTimer *availabilityCheckTimer_{nullptr};
-  bool availabilityCheckPending_{false};
 
   QTabWidget *operationsTabs_{nullptr};
   QLabel *serviceAvailabilityLabel_{nullptr};
@@ -137,6 +134,7 @@ private:
   QLineEdit *rawCapturePathEdit_{nullptr};
   QCheckBox *emitProbabilitiesCheck_{nullptr};
   QCheckBox *gpioSafetyCheck_{nullptr};
+  QPushButton *diagnosticCheckButton_{nullptr};
   QPushButton *prepareModelButton_{nullptr};
   QPushButton *validateRuntimeButton_{nullptr};
   QPushButton *startInferenceButton_{nullptr};

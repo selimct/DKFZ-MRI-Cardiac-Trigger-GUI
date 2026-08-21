@@ -24,7 +24,6 @@
 #include <QTabWidget>
 #include <QTextCharFormat>
 #include <QTextCursor>
-#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -155,11 +154,17 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
 
   probeButton_ = new QPushButton(QStringLiteral("Check availability"), central);
   probeButton_->setToolTip(QStringLiteral(
-      "Availability is refreshed automatically. Use this button to retry "
-      "immediately."));
+      "Run the availability check for the currently entered settings."));
+  connectionCheckButton_ =
+      makeActionButton(QStringLiteral("Check"), connectionDialog);
+  connectionCheckButton_->setToolTip(QStringLiteral(
+      "Run the availability check with the entered connection settings."));
   healthButton_ =
       makeActionButton(QStringLiteral("System information"), connectionDialog);
-  connectionOuterLayout->addWidget(healthButton_);
+  auto *connectionActions = new QHBoxLayout;
+  connectionActions->addWidget(connectionCheckButton_);
+  connectionActions->addWidget(healthButton_);
+  connectionOuterLayout->addLayout(connectionActions);
 
   auto *connectionDialogButtons =
       new QDialogButtonBox(QDialogButtonBox::Close, connectionDialog);
@@ -208,6 +213,11 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
           "Availability has not been checked. Direct actions are disabled."),
       diagnosticPage);
   diagnosticAvailabilityLabel_->setWordWrap(true);
+  diagnosticCheckButton_ =
+      new QPushButton(QStringLiteral("Check"), diagnosticPage);
+  diagnosticCheckButton_->setToolTip(QStringLiteral(
+      "Run the availability check with the entered model and runtime "
+      "settings."));
 
   auto *diagnosticColumns = new QHBoxLayout;
   auto *deploymentForm = new QFormLayout;
@@ -306,7 +316,10 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
   diagnosticActions->addWidget(stopInferenceButton_);
   diagnosticActions->addWidget(rebuildRuntimeButton_);
 
-  diagnosticLayout->addWidget(diagnosticAvailabilityLabel_);
+  auto *diagnosticAvailabilityRow = new QHBoxLayout;
+  diagnosticAvailabilityRow->addWidget(diagnosticAvailabilityLabel_, 1);
+  diagnosticAvailabilityRow->addWidget(diagnosticCheckButton_);
+  diagnosticLayout->addLayout(diagnosticAvailabilityRow);
   diagnosticLayout->addLayout(diagnosticColumns);
   diagnosticLayout->addLayout(diagnosticChecks);
   diagnosticLayout->addLayout(diagnosticActions);
@@ -381,22 +394,12 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
             }
           });
 
-  availabilityCheckTimer_ = new QTimer(this);
-  availabilityCheckTimer_->setSingleShot(true);
-  availabilityCheckTimer_->setInterval(800);
-  connect(availabilityCheckTimer_, &QTimer::timeout, this, [this] {
-    if (runner_.isRunning() || controlRunner_.isRunning()) {
-      return;
-    }
-    availabilityCheckPending_ = false;
-    checkAvailability(false);
-  });
-
-  connect(probeButton_, &QPushButton::clicked, this, [this] {
-    availabilityCheckTimer_->stop();
-    availabilityCheckPending_ = false;
-    checkAvailability();
-  });
+  connect(probeButton_, &QPushButton::clicked, this,
+          &MainWindow::checkAvailability);
+  connect(connectionCheckButton_, &QPushButton::clicked, this,
+          &MainWindow::checkAvailability);
+  connect(diagnosticCheckButton_, &QPushButton::clicked, this,
+          &MainWindow::checkAvailability);
   connect(healthButton_, &QPushButton::clicked, this, [this] {
     runCommand(QStringLiteral("System information"),
                QStringLiteral(
@@ -538,12 +541,6 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
           invalidateConnection);
   connect(identityFileEdit_, &QLineEdit::textChanged, this,
           invalidateConnection);
-  connect(acceptNewHostKeyCheck_, &QCheckBox::toggled, this,
-          [this](bool checked) {
-            if (checked && !capabilities_.known) {
-              scheduleAvailabilityCheck();
-            }
-          });
   connect(remoteDirectoryEdit_, &QLineEdit::textChanged, this, invalidate);
   connect(modelNameEdit_, &QLineEdit::textChanged, this,
           [this, invalidate](const QString &name) {
@@ -641,9 +638,6 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
             }
             activeTask_ = TaskKind::none;
             updateActionAvailability();
-            if (availabilityCheckPending_) {
-              scheduleAvailabilityCheck();
-            }
           });
   connect(&runner_, &RemoteCommandRunner::finished, this,
           &MainWindow::finishMainCommand);
@@ -677,9 +671,6 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
                           QColor(QStringLiteral("#d45b5b")));
             statusLabel_->setText(message);
             updateActionAvailability();
-            if (availabilityCheckPending_) {
-              scheduleAvailabilityCheck();
-            }
           });
   connect(
       &controlRunner_, &RemoteCommandRunner::finished, this,
@@ -697,13 +688,9 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
         }
         statusLabel_->setText(summary);
         updateActionAvailability();
-        if (availabilityCheckPending_) {
-          scheduleAvailabilityCheck();
-        }
       });
 
   updateDiagnosticModeControls();
-  invalidateAvailability();
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
@@ -923,29 +910,12 @@ void MainWindow::addCommandToHistory(const QString &command) {
   }
 }
 
-void MainWindow::checkAvailability(bool reportValidationError) {
+void MainWindow::checkAvailability() {
   const DiagnosticRuntimeOptions options = diagnosticOptions();
   const QString error = validateDiagnosticOptions(options);
   if (!error.isEmpty()) {
-    if (reportValidationError) {
-      appendConsole(QStringLiteral("Error: %1\n").arg(error), elevatedColor());
-      statusLabel_->setText(error);
-    } else {
-      serviceAvailabilityLabel_->setText(QStringLiteral(
-          "Availability refresh is waiting for valid settings. Service "
-          "actions are disabled."));
-      diagnosticAvailabilityLabel_->setText(
-          QStringLiteral("Availability refresh is waiting: %1").arg(error));
-    }
-    return;
-  }
-  if (connectionOptions().host.trimmed().isEmpty() && !reportValidationError) {
-    serviceAvailabilityLabel_->setText(QStringLiteral(
-        "Enter a Jetson host to check availability. Service actions are "
-        "disabled."));
-    diagnosticAvailabilityLabel_->setText(QStringLiteral(
-        "Enter a Jetson host to check availability. Direct actions are "
-        "disabled."));
+    appendConsole(QStringLiteral("Error: %1\n").arg(error), elevatedColor());
+    statusLabel_->setText(error);
     return;
   }
   serviceAvailabilityLabel_->setText(
@@ -956,25 +926,16 @@ void MainWindow::checkAvailability(bool reportValidationError) {
              availabilityProbeCommand(options), TaskKind::availabilityProbe);
 }
 
-void MainWindow::scheduleAvailabilityCheck() {
-  availabilityCheckPending_ = true;
-  if (!runner_.isRunning() && !controlRunner_.isRunning()) {
-    availabilityCheckTimer_->start();
-  }
-}
-
 void MainWindow::invalidateAvailability() {
   capabilities_ = {};
   serviceSafetyCheck_->setChecked(false);
   gpioSafetyCheck_->setChecked(false);
   serviceAvailabilityLabel_->setText(QStringLiteral(
-      "Refreshing availability automatically. Service actions are disabled "
-      "until the check completes."));
+      "Settings changed. Select Check before using "
+      "service actions."));
   diagnosticAvailabilityLabel_->setText(QStringLiteral(
-      "Refreshing availability automatically. Direct actions are disabled "
-      "until the check completes."));
+      "Settings changed. Select Check before using direct actions."));
   updateActionAvailability();
-  scheduleAvailabilityCheck();
 }
 
 void MainWindow::applyAvailabilityProbe(const QByteArray &output) {
@@ -1139,6 +1100,7 @@ void MainWindow::updateActionAvailability() {
   sudoPasswordEdit_->setEnabled(!anyBusy);
   acceptNewHostKeyCheck_->setEnabled(!anyBusy);
   probeButton_->setEnabled(!anyBusy);
+  connectionCheckButton_->setEnabled(!anyBusy);
   healthButton_->setEnabled(!anyBusy);
 
   serviceStatusButton_->setEnabled(!anyBusy && capabilities_.service);
@@ -1166,6 +1128,7 @@ void MainWindow::updateActionAvailability() {
       !anyBusy &&
       outputModeCombo_->currentText().contains(QStringLiteral("jsonl")));
   gpioSafetyCheck_->setEnabled(!anyBusy && gpioMode);
+  diagnosticCheckButton_->setEnabled(!anyBusy);
 
   prepareModelButton_->setEnabled(
       !anyBusy && parametersValid && capabilities_.prepareScript &&
@@ -1275,7 +1238,4 @@ void MainWindow::finishMainCommand(int exitCode,
   }
   activeTask_ = TaskKind::none;
   updateActionAvailability();
-  if (availabilityCheckPending_) {
-    scheduleAvailabilityCheck();
-  }
 }
