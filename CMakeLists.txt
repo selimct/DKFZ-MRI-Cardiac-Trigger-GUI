@@ -31,6 +31,11 @@ qt_add_executable(jetson-control WIN32
     src/main_window.cpp
     src/main_window.h
 )
+if(WIN32)
+    target_sources(jetson-control PRIVATE
+        packaging/windows/jetson-control.rc
+    )
+endif()
 target_link_libraries(jetson-control PRIVATE
     jetson_control_core
     Qt6::Widgets

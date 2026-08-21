@@ -133,6 +133,8 @@ Linux and Windows. When the release workflow finishes, its **Assets** section
 contains:
 
 - `jetson-control-<tag>-linux-x86_64.AppImage` for Linux;
+- `jetson-control-<tag>-linux-x86_64.AppImage.asc` containing its detached GPG signature;
+- `jetson-control-release-signing-key.asc` containing the public GPG key;
 - `jetson-control-<tag>-windows-x86_64-setup.exe` for Windows; and
 - `SHA256SUMS.txt` for download verification.
 
@@ -143,11 +145,19 @@ chmod +x jetson-control-*-linux-x86_64.AppImage
 ./jetson-control-*-linux-x86_64.AppImage
 ```
 
+The AppImage carries an embedded signature. Its detached signature can also be
+checked with standard GnuPG tooling:
+
+```bash
+gpg --import jetson-control-release-signing-key.asc
+gpg --verify jetson-control-*-linux-x86_64.AppImage.asc jetson-control-*-linux-x86_64.AppImage
+```
+
 On Windows, run the downloaded setup executable and launch **Jetson Control**
 from the Start menu. The application still requires an OpenSSH `ssh` client on
-the desktop because all Jetson commands are executed through it. Release files
-are currently unsigned, so Windows SmartScreen may show an unrecognized-app
-warning until code signing is configured.
+the desktop because all Jetson commands are executed through it. The Windows
+application and installer are currently unsigned, so Windows SmartScreen may
+show an unrecognized-app warning.
 
 To publish a new version, first make sure the release workflow is present on
 the default branch. In GitHub, create a release for a tag such as `v0.1.0` and

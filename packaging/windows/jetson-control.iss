@@ -32,7 +32,13 @@ WizardStyle=modern
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+SetupIconFile=jetson-control.ico
+UninstallIconFile=jetson-control.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
+#ifdef MySignTool
+SignTool={#MySignTool}
+SignedUninstaller=yes
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

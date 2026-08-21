@@ -31,7 +31,7 @@ jobs:
       - name: Install build and packaging dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends ninja-build libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0 libfuse2 file patchelf
+          sudo apt-get install --no-install-recommends ninja-build libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0 libfuse2 file patchelf gnupg
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -58,12 +58,40 @@ jobs:
           curl --fail --location --retry 3 --output linuxdeploy-plugin-qt-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
 
+      - name: Import AppImage signing key
+        env:
+          LINUX_GPG_PRIVATE_KEY_BASE64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
+        run: |
+          if [[ -z "$LINUX_GPG_PRIVATE_KEY_BASE64" ]]; then
+            echo "::error::The LINUX_GPG_PRIVATE_KEY_BASE64 Actions secret is required for release signing"
+            exit 1
+          fi
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          install -d -m 700 "$GNUPGHOME"
+          key_file="$RUNNER_TEMP/jetson-control-release-key.gpg"
+          printf '%s' "$LINUX_GPG_PRIVATE_KEY_BASE64" | base64 --decode > "$key_file"
+          gpg --batch --import "$key_file"
+          rm -f "$key_file"
+          signing_key="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')"
+          if [[ -z "$signing_key" ]]; then
+            echo "::error::No secret GPG signing key was imported"
+            exit 1
+          fi
+          echo "LDAI_SIGN=1" >> "$GITHUB_ENV"
+          echo "LDAI_SIGN_KEY=$signing_key" >> "$GITHUB_ENV"
+
       - name: Build AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
+          APPIMAGETOOL_SIGN_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
           ARCH: x86_64
           NO_STRIP: "1"
         run: |
+          if [[ -z "$APPIMAGETOOL_SIGN_PASSPHRASE" ]]; then
+            echo "::error::The LINUX_GPG_PASSPHRASE Actions secret is required for release signing"
+            exit 1
+          fi
           mkdir -p dist
           safe_tag="${RELEASE_TAG//\//-}"
           export QMAKE="$QT_ROOT_DIR/bin/qmake"
@@ -76,12 +104,24 @@ jobs:
             --plugin qt \
             --output appimage
           test -s "$LDAI_OUTPUT"
+          test -n "$("$LDAI_OUTPUT" --appimage-signature)"
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$APPIMAGETOOL_SIGN_PASSPHRASE" \
+            --local-user "$LDAI_SIGN_KEY" \
+            --armor --detach-sign \
+            --output "$LDAI_OUTPUT.asc" \
+            "$LDAI_OUTPUT"
+          gpg --batch --verify "$LDAI_OUTPUT.asc" "$LDAI_OUTPUT"
+          gpg --batch --armor --export "$LDAI_SIGN_KEY" > dist/jetson-control-release-signing-key.asc
 
       - name: Upload Linux package
         uses: actions/upload-artifact@v7
         with:
           name: linux-appimage
-          path: dist/*.AppImage
+          path: |
+            dist/*.AppImage
+            dist/*.AppImage.asc
+            dist/jetson-control-release-signing-key.asc
           if-no-files-found: error
 
   windows-installer:
@@ -167,9 +207,9 @@ jobs:
 
       - name: Create checksums
         working-directory: dist
-        run: sha256sum *.AppImage *.exe > SHA256SUMS.txt
+        run: sha256sum *.AppImage *.AppImage.asc *.exe jetson-control-release-signing-key.asc > SHA256SUMS.txt
 
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE_TAG" dist/*.AppImage dist/*.exe dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE_TAG" dist/*.AppImage dist/*.AppImage.asc dist/*.exe dist/jetson-control-release-signing-key.asc dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
