@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="91" height="20" viewBox="0 0 91 20" role="img" aria-label="Trigger GUI">
   <title>Trigger GUI</title>
   <defs>
-    <linearGradient id="iconbg" x1="2.44" y1="1.69" x2="17.56" y2="18.31" gradientUnits="userSpaceOnUse">
+    <linearGradient id="iconbg" x1="0" y1="0" x2="20" y2="20" gradientUnits="userSpaceOnUse">
       <stop stop-color="#27a6a1"/>
       <stop offset="1" stop-color="#16496f"/>
     </linearGradient>
-    <linearGradient id="labelbg" x1="0" y1="0" x2="0" y2="1">
+    <linearGradient id="labelbg" x1="0" y1="0" x2="0" y2="20" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#666"/>
       <stop offset="1" stop-color="#555"/>
     </linearGradient>
@@ -15,21 +15,19 @@
   </defs>
 
   <g clip-path="url(#badgeclip)">
-    <rect width="20" height="20" fill="#ffffff"/>
+    <!-- Full-bleed icon panel: no white border -->
+    <rect width="20" height="20" fill="url(#iconbg)"/>
     <rect x="20" width="71" height="20" fill="url(#labelbg)"/>
 
-    <!-- Trigger GUI icon, reproduced from the supplied 96x96 SVG -->
-    <g transform="scale(0.2083333333)">
-      <rect x="4" y="4" width="88" height="88" rx="20" fill="url(#iconbg)"/>
-      <rect x="20" y="28" width="56" height="40" rx="6" fill="#f5fbff"/>
-      <path d="m29 40 9 8-9 8"
-            fill="none" stroke="#16496f" stroke-linecap="round"
-            stroke-linejoin="round" stroke-width="4.5"/>
-      <path d="M45 56h20"
-            fill="none" stroke="#27a6a1" stroke-linecap="round"
-            stroke-width="4.5"/>
-      <circle cx="68" cy="37" r="2.6" fill="#ef6b5a"/>
-    </g>
+    <!-- Simplified Trigger GUI terminal mark -->
+    <rect x="4.2" y="5.8" width="11.6" height="8.4" rx="1.25" fill="#f5fbff"/>
+    <path d="M6.1 8.3 8 10 6.1 11.7"
+          fill="none" stroke="#16496f" stroke-width="0.95"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M9.4 11.7h4.1"
+          fill="none" stroke="#27a6a1" stroke-width="0.95"
+          stroke-linecap="round"/>
+    <circle cx="14.1" cy="7.75" r="0.55" fill="#ef6b5a"/>
 
     <text x="55.5" y="14"
           text-anchor="middle"
