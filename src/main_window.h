@@ -94,6 +94,7 @@ private:
   QElapsedTimer controlTimer_;
   TaskKind activeTask_{TaskKind::none};
   QByteArray activeStandardOutput_;
+  QByteArray activeStandardError_;
   QByteArray mainStandardOutputDisplayBuffer_;
   QByteArray mainStandardErrorDisplayBuffer_;
   QByteArray controlStandardOutputDisplayBuffer_;
@@ -106,6 +107,7 @@ private:
   QLineEdit *identityFileEdit_{nullptr};
   QLineEdit *remoteDirectoryEdit_{nullptr};
   QLineEdit *sudoPasswordEdit_{nullptr};
+  QCheckBox *acceptNewHostKeyCheck_{nullptr};
   QPushButton *probeButton_{nullptr};
   QPushButton *healthButton_{nullptr};
 

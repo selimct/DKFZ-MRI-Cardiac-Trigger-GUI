@@ -10,6 +10,7 @@ private slots:
   void buildsDestination();
   void buildsRemoteCommandWithDirectory();
   void buildsArgumentsForNonInteractiveSsh();
+  void acceptsOnlyNewHostKeysWhenRequested();
   void omitsIdentityArgumentsWhenNotConfigured();
 };
 
@@ -45,7 +46,7 @@ void SshCommandBuilderTest::buildsArgumentsForNonInteractiveSsh() {
       .host = QStringLiteral("10.0.0.8"),
       .user = QStringLiteral("orin"),
       .port = 2202,
-      .identityFile = QStringLiteral("/tmp/jetson key"),
+      .identityFile = QStringLiteral("/tmp/jetson key.pub"),
   };
   const QStringList arguments =
       sshArguments(options, QStringLiteral("uname -a"));
@@ -56,7 +57,8 @@ void SshCommandBuilderTest::buildsArgumentsForNonInteractiveSsh() {
   QVERIFY(arguments.contains(QStringLiteral("IdentitiesOnly=yes")));
   const int identityIndex = arguments.indexOf(QStringLiteral("-i"));
   QVERIFY(identityIndex >= 0);
-  QCOMPARE(arguments.at(identityIndex + 1), QStringLiteral("/tmp/jetson key"));
+  QCOMPARE(arguments.at(identityIndex + 1),
+           QStringLiteral("/tmp/jetson key.pub"));
   QVERIFY(arguments.contains(QStringLiteral("2202")));
   QCOMPARE(arguments.at(arguments.size() - 2), QStringLiteral("orin@10.0.0.8"));
   QCOMPARE(arguments.last(), QStringLiteral("exec bash -lc 'uname -a'"));
@@ -69,6 +71,19 @@ void SshCommandBuilderTest::omitsIdentityArgumentsWhenNotConfigured() {
 
   QVERIFY(!arguments.contains(QStringLiteral("-i")));
   QVERIFY(!arguments.contains(QStringLiteral("IdentitiesOnly=yes")));
+}
+
+void SshCommandBuilderTest::acceptsOnlyNewHostKeysWhenRequested() {
+  const SshConnectionOptions options{
+      .host = QStringLiteral("new-jetson"),
+      .acceptNewHostKey = true,
+  };
+  const QStringList arguments =
+      sshArguments(options, QStringLiteral("uname -a"));
+
+  QVERIFY(arguments.contains(
+      QStringLiteral("StrictHostKeyChecking=accept-new")));
+  QVERIFY(!arguments.contains(QStringLiteral("StrictHostKeyChecking=yes")));
 }
 
 QTEST_APPLESS_MAIN(SshCommandBuilderTest)

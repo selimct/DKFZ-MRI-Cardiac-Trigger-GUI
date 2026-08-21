@@ -7,6 +7,10 @@
 #include <QColor>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFontDatabase>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -72,34 +76,54 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
   auto *central = new QWidget(this);
   auto *mainLayout = new QVBoxLayout(central);
 
-  auto *connectionGroup = new QGroupBox(QStringLiteral("Connection"), central);
-  auto *connectionOuterLayout = new QVBoxLayout(connectionGroup);
+  auto *connectionButton =
+      new QPushButton(QStringLiteral("Connection"), central);
+  connectionButton->setToolTip(
+      QStringLiteral(
+          "Edit SSH connection settings and run connection checks."));
+
+  auto *connectionDialog = new QDialog(this);
+  connectionDialog->setWindowTitle(QStringLiteral("Connection"));
+  connectionDialog->setModal(false);
+  connectionDialog->setMinimumWidth(620);
+  auto *connectionOuterLayout = new QVBoxLayout(connectionDialog);
   auto *connectionLayout = new QFormLayout;
 
-  hostEdit_ = new QLineEdit(connectionGroup);
+  hostEdit_ = new QLineEdit(connectionDialog);
   hostEdit_->setPlaceholderText(QStringLiteral("jetson or 192.168.1.50"));
-  userEdit_ = new QLineEdit(connectionGroup);
+  userEdit_ = new QLineEdit(connectionDialog);
   userEdit_->setPlaceholderText(
       QStringLiteral("orin (optional when configured in SSH)"));
-  portSpin_ = new QSpinBox(connectionGroup);
+  portSpin_ = new QSpinBox(connectionDialog);
   portSpin_->setRange(1, 65535);
   portSpin_->setValue(initialConnection.port);
   identityFileEdit_ =
-      new QLineEdit(initialConnection.identityFile, connectionGroup);
+      new QLineEdit(initialConnection.identityFile, connectionDialog);
   identityFileEdit_->setPlaceholderText(
-      QStringLiteral("optional; loaded from connection.ini"));
+      QStringLiteral("absolute path to an SSH identity (optional)"));
+  identityFileEdit_->setClearButtonEnabled(true);
   identityFileEdit_->setToolTip(QStringLiteral(
-      "Private-key path on this computer. A relative identity_file in "
+      "Absolute path to a private key, or to a public key whose matching "
+      "private key is loaded in ssh-agent. A relative identity_file in "
       "connection.ini is resolved next to that file."));
+  auto *identityFileButton =
+      new QPushButton(QStringLiteral("Browse…"), connectionDialog);
+  identityFileButton->setToolTip(
+      QStringLiteral("Select an SSH identity and use its absolute path."));
+  auto *identityFileRow = new QWidget(connectionDialog);
+  auto *identityFileLayout = new QHBoxLayout(identityFileRow);
+  identityFileLayout->setContentsMargins(0, 0, 0, 0);
+  identityFileLayout->addWidget(identityFileEdit_, 1);
+  identityFileLayout->addWidget(identityFileButton);
   remoteDirectoryEdit_ =
       new QLineEdit(initialConnection.remoteDirectory.isEmpty()
                         ? QStringLiteral("/home/orin/work/live_stack")
                         : initialConnection.remoteDirectory,
-                    connectionGroup);
+                    connectionDialog);
   remoteDirectoryEdit_->setToolTip(QStringLiteral(
       "The Jetson checkout path. It must match the source side of the "
       "service's BindReadOnlyPaths entry."));
-  sudoPasswordEdit_ = new QLineEdit(connectionGroup);
+  sudoPasswordEdit_ = new QLineEdit(connectionDialog);
   sudoPasswordEdit_->setEchoMode(QLineEdit::Password);
   sudoPasswordEdit_->setClearButtonEnabled(true);
   sudoPasswordEdit_->setPlaceholderText(
@@ -108,6 +132,12 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
       "Password for sudo on the remote Jetson. It is never saved or placed "
       "in a command; managed service actions send it over SSH standard "
       "input to sudo."));
+  acceptNewHostKeyCheck_ = new QCheckBox(
+      QStringLiteral("Trust and save a new host key on the next connection"),
+      connectionDialog);
+  acceptNewHostKeyCheck_->setToolTip(QStringLiteral(
+      "Uses OpenSSH accept-new once. Unknown host keys are added to your "
+      "known_hosts file, while changed host keys are still rejected."));
 
   hostEdit_->setText(initialConnection.host);
   userEdit_->setText(initialConnection.user);
@@ -116,19 +146,24 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
   connectionLayout->addRow(QStringLiteral("Remote sudo password"),
                            sudoPasswordEdit_);
   connectionLayout->addRow(QStringLiteral("Port"), portSpin_);
-  connectionLayout->addRow(QStringLiteral("SSH key"), identityFileEdit_);
+  connectionLayout->addRow(QStringLiteral("SSH identity"), identityFileRow);
   connectionLayout->addRow(QStringLiteral("Remote project root"),
                            remoteDirectoryEdit_);
   connectionOuterLayout->addLayout(connectionLayout);
+  connectionOuterLayout->addWidget(acceptNewHostKeyCheck_);
 
   auto *connectionActions = new QHBoxLayout;
   probeButton_ =
-      makeActionButton(QStringLiteral("Check availability"), connectionGroup);
+      makeActionButton(QStringLiteral("Check availability"), connectionDialog);
   healthButton_ =
-      makeActionButton(QStringLiteral("System information"), connectionGroup);
+      makeActionButton(QStringLiteral("System information"), connectionDialog);
   connectionActions->addWidget(probeButton_);
   connectionActions->addWidget(healthButton_);
   connectionOuterLayout->addLayout(connectionActions);
+
+  auto *connectionDialogButtons =
+      new QDialogButtonBox(QDialogButtonBox::Close, connectionDialog);
+  connectionOuterLayout->addWidget(connectionDialogButtons);
 
   operationsTabs_ = new QTabWidget(central);
 
@@ -314,12 +349,33 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
           : QStringLiteral("Ready — loaded %1; SSH executable: %2")
                 .arg(connectionFile, sshStatus));
 
-  mainLayout->addWidget(connectionGroup);
+  mainLayout->addWidget(connectionButton, 0, Qt::AlignRight);
   mainLayout->addWidget(operationsTabs_);
   mainLayout->addWidget(commandGroup);
   mainLayout->addWidget(console_, 1);
   mainLayout->addWidget(statusLabel_);
   setCentralWidget(central);
+
+  connect(connectionButton, &QPushButton::clicked, this,
+          [connectionDialog] {
+            connectionDialog->show();
+            connectionDialog->raise();
+            connectionDialog->activateWindow();
+          });
+  connect(connectionDialogButtons, &QDialogButtonBox::rejected,
+          connectionDialog, &QDialog::reject);
+  connect(identityFileButton, &QPushButton::clicked, this,
+          [this, connectionDialog] {
+            const QString currentPath = identityFileEdit_->text().trimmed();
+            const QString selectedPath = QFileDialog::getOpenFileName(
+                connectionDialog, QStringLiteral("Select SSH identity"),
+                currentPath,
+                QStringLiteral("SSH identity files (*)"));
+            if (!selectedPath.isEmpty()) {
+              identityFileEdit_->setText(
+                  QFileInfo(selectedPath).absoluteFilePath());
+            }
+          });
 
   connect(probeButton_, &QPushButton::clicked, this, [this] {
     const DiagnosticRuntimeOptions options = diagnosticOptions();
@@ -522,6 +578,7 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
           [this](const QString &destination, const QString &command) {
             commandTimer_.restart();
             activeStandardOutput_.clear();
+            activeStandardError_.clear();
             mainStandardOutputDisplayBuffer_.clear();
             mainStandardErrorDisplayBuffer_.clear();
             QString displayCommand = command;
@@ -550,6 +607,7 @@ MainWindow::MainWindow(const SshConnectionOptions &initialConnection,
           });
   connect(&runner_, &RemoteCommandRunner::standardErrorReceived, this,
           [this](const QByteArray &data) {
+            activeStandardError_.append(data);
             appendClassifiedConsoleBytes(mainStandardErrorDisplayBuffer_, data);
           });
   connect(&runner_, &RemoteCommandRunner::failedToStart, this,
@@ -664,6 +722,7 @@ SshConnectionOptions MainWindow::connectionOptions() const {
       .port = static_cast<quint16>(portSpin_->value()),
       .identityFile = identityFileEdit_->text(),
       .remoteDirectory = remoteDirectoryEdit_->text(),
+      .acceptNewHostKey = acceptNewHostKeyCheck_->isChecked(),
   };
 }
 
@@ -704,7 +763,11 @@ void MainWindow::runCommand(const QString &label, const QString &command,
     standardInput = sudoPasswordEdit_->text().toUtf8();
     standardInput.append('\n');
   }
-  runner_.start(connectionOptions(), command, standardInput);
+  const SshConnectionOptions options = connectionOptions();
+  runner_.start(options, command, standardInput);
+  if (options.acceptNewHostKey && runner_.isRunning()) {
+    acceptNewHostKeyCheck_->setChecked(false);
+  }
   standardInput.fill('\0');
   updateActionAvailability();
 }
@@ -998,6 +1061,7 @@ void MainWindow::updateActionAvailability() {
   identityFileEdit_->setEnabled(!anyBusy);
   remoteDirectoryEdit_->setEnabled(!anyBusy);
   sudoPasswordEdit_->setEnabled(!anyBusy);
+  acceptNewHostKeyCheck_->setEnabled(!anyBusy);
   probeButton_->setEnabled(!anyBusy);
   healthButton_->setEnabled(!anyBusy);
 
@@ -1115,7 +1179,17 @@ void MainWindow::finishMainCommand(int exitCode,
       completionSummary(exitCode, exitStatus, cancelled, elapsed);
   appendConsole(QStringLiteral("\n[%1]\n").arg(summary),
                 completionColor(exitCode, exitStatus, cancelled));
-  statusLabel_->setText(summary);
+  const bool unknownHostKey =
+      activeStandardError_.toLower().contains("host key is known for");
+  if (unknownHostKey) {
+    const QString guidance = QStringLiteral(
+        "Unknown SSH host key — open Connection, verify the host, enable "
+        "trust for the next connection, and retry.");
+    appendConsole(guidance + QLatin1Char('\n'), attentionColor());
+    statusLabel_->setText(guidance);
+  } else {
+    statusLabel_->setText(summary);
+  }
   activeTask_ = TaskKind::none;
   updateActionAvailability();
 }

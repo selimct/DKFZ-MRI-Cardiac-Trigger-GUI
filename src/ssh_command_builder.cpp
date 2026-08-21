@@ -34,7 +34,9 @@ QStringList sshArguments(const SshConnectionOptions &options,
       QStringLiteral("-o"),
       QStringLiteral("BatchMode=yes"),
       QStringLiteral("-o"),
-      QStringLiteral("StrictHostKeyChecking=yes"),
+      options.acceptNewHostKey
+          ? QStringLiteral("StrictHostKeyChecking=accept-new")
+          : QStringLiteral("StrictHostKeyChecking=yes"),
       QStringLiteral("-o"),
       QStringLiteral("ConnectTimeout=10"),
       QStringLiteral("-o"),

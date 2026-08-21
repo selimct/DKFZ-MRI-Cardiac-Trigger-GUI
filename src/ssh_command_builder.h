@@ -9,6 +9,7 @@ struct SshConnectionOptions {
   quint16 port{22};
   QString identityFile;
   QString remoteDirectory;
+  bool acceptNewHostKey{false};
 };
 
 [[nodiscard]] QString posixShellQuote(const QString &value);

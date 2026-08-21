@@ -211,8 +211,10 @@ exist on the desktop.
 `connection.ini` and the common private-key names in `.gitignore` are local
 only. Do not force-add them to Git. A relative `identity_file` is resolved
 relative to `connection.ini`, not relative to the shell's working directory.
-When an identity is configured, the GUI passes it to OpenSSH with `-i` and
-enables `IdentitiesOnly=yes`.
+The Connection dialog also has a file chooser that records an absolute path.
+The identity may be a private key, or a public key whose corresponding private
+key is loaded in `ssh-agent`. The GUI passes it to OpenSSH with `-i` and enables
+`IdentitiesOnly=yes`.
 
 At startup the GUI looks for `connection.ini` in the current directory, beside
 the executable, and one directory above the executable (the normal development
@@ -270,13 +272,13 @@ or source change is necessary.
 
 ## First connection
 
-The application sets `BatchMode=yes` and `StrictHostKeyChecking=yes` so it
-cannot display password or unknown-host prompts. Establish and verify the
-connection once from a terminal before using the GUI:
-
-```bash
-ssh -i jetson_key orin@JETSON_HOST
-```
+The application sets `BatchMode=yes` and normally uses
+`StrictHostKeyChecking=yes`, so password and unknown-host prompts cannot block
+it. For a first connection, open the Connection dialog, verify the Host, and
+select **Trust and save a new host key on the next connection** before clicking
+**Check availability**. This uses OpenSSH's `accept-new` mode for that attempt:
+an unknown key is saved in the normal `known_hosts` file, but a changed key is
+still rejected. The option resets after starting the connection.
 
 An entry from `~/.ssh/config` can be entered directly into the Host field. The
 GUI's explicit User, Port, and SSH key values take precedence over values in
