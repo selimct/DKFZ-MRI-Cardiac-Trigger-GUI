@@ -83,7 +83,6 @@ jobs:
 
       - name: Build AppImage
         env:
-          APPIMAGE_EXTRACT_AND_RUN: "1"
           APPIMAGETOOL_SIGN_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
           ARCH: x86_64
           NO_STRIP: "1"
@@ -97,7 +96,7 @@ jobs:
           export QMAKE="$QT_ROOT_DIR/bin/qmake"
           export LINUXDEPLOY_OUTPUT_VERSION="${RELEASE_TAG#v}"
           export LDAI_OUTPUT="$GITHUB_WORKSPACE/dist/jetson-control-${safe_tag}-linux-x86_64.AppImage"
-          ./linuxdeploy-x86_64.AppImage \
+          APPIMAGE_EXTRACT_AND_RUN=1 ./linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
             --desktop-file packaging/linux/jetson-control.desktop \
             --icon-file packaging/linux/jetson-control.svg \
