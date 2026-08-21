@@ -82,7 +82,8 @@ The GUI reads its model name, variant, and source directory and prevents direct
 Start when they do not match the current selection. Model preparation is
 disabled while the service is active, activating, reloading, or deactivating,
 matching `run/deploy_model.sh`; use Stop, prepare and activate the selected
-model, check availability again, then Start the service.
+model, then Start the service after the automatic availability refresh
+completes.
 
 Direct inference defaults to `none`. GPIO-capable modes cannot start until the
 hardware safety checkbox is selected. An empty raw-capture field explicitly
@@ -109,10 +110,13 @@ Stop action active. `input_paused` is shown in amber. Once stable moving input
 returns, the status changes back to running; the runtime has cleared its old
 temporal state and rebuilds a completely fresh model window before inference.
 
-After changing the connection, project root, model source directory, model,
-variant, or configuration, run **Check availability** again. Operations whose
-executable, script, configuration, active-slot files, or service unit is
-unavailable stay disabled.
+Availability is checked automatically at startup, shortly after changing the
+connection, project root, model source directory, model, variant, or
+configuration, and after successful service or model mutations. The check
+waits for any active command to finish. **Check availability** remains visible
+in the main window for immediate retries. Operations whose executable, script,
+configuration, active-slot files, or service unit is unavailable stay
+disabled.
 
 This is a command console, not a terminal emulator. General interactive
 password prompts, full-screen terminal programs, and shell job control are
@@ -275,10 +279,12 @@ or source change is necessary.
 The application sets `BatchMode=yes` and normally uses
 `StrictHostKeyChecking=yes`, so password and unknown-host prompts cannot block
 it. For a first connection, open the Connection dialog, verify the Host, and
-select **Trust and save a new host key on the next connection** before clicking
-**Check availability**. This uses OpenSSH's `accept-new` mode for that attempt:
-an unknown key is saved in the normal `known_hosts` file, but a changed key is
-still rejected. The option resets after starting the connection.
+select **Trust and save a new host key on the next connection**. The GUI
+automatically retries the availability check; the same action is also always
+available from **Check availability** in the main window. This uses OpenSSH's
+`accept-new` mode for that attempt: an unknown key is saved in the normal
+`known_hosts` file, but a changed key is still rejected. The option resets
+after starting the connection.
 
 An entry from `~/.ssh/config` can be entered directly into the Host field. The
 GUI's explicit User, Port, and SSH key values take precedence over values in
